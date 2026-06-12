@@ -1,0 +1,78 @@
+# Configuración del organizador de fotos
+
+# Extensiones de imagen soportadas
+extensions:
+  - .jpg
+  - .jpeg
+  - .png
+  - .heic
+  - .tiff
+  - .tif
+  - .bmp
+  - .gif
+  - .webp
+  - .cr2
+  - .nef
+  - .arw
+
+# Categorías temáticas y palabras clave que CLIP buscará
+# Puedes añadir o quitar categorías según tus necesidades
+categories:
+  Viajes:
+    - "travel photo"
+    - "landscape travel"
+    - "tourist attraction"
+    - "city street travel"
+    - "beach vacation"
+    - "mountains travel"
+  Personas:
+    - "portrait of a person"
+    - "group of people"
+    - "selfie"
+    - "people smiling"
+  Familia:
+    - "family photo"
+    - "family gathering"
+    - "children playing"
+    - "baby photo"
+  Naturaleza:
+    - "nature landscape"
+    - "forest trees"
+    - "flowers garden"
+    - "sunset sunrise"
+    - "ocean sea"
+    - "mountains"
+  Animales:
+    - "pet animal"
+    - "dog cat"
+    - "wildlife animal"
+    - "bird animal"
+  Comida:
+    - "food meal"
+    - "restaurant dish"
+    - "cooking food"
+  Eventos:
+    - "birthday party"
+    - "wedding ceremony"
+    - "celebration event"
+    - "concert music"
+  Documentos:
+    - "document paper text"
+    - "screenshot screen"
+    - "whiteboard diagram"
+
+# Carpeta para fotos sin categoría clara
+fallback_category: Sin_clasificar
+
+# Carpeta para duplicados detectados
+duplicates_folder: _Duplicados
+
+# Umbral de similitud para duplicados (0-64, menor = más estricto)
+# 0 = idénticos, 10 = muy similares, 20 = similares
+duplicate_threshold: 10
+
+# Si true, copia también los duplicados a _Duplicados para revisión
+copy_duplicates: true
+
+# Año fallback si la foto no tiene fecha EXIF ni de archivo válida
+fallback_year: Sin_fecha

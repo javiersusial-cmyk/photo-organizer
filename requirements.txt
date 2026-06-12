@@ -1,0 +1,10 @@
+Pillow>=10.0
+exifread>=3.0
+imagehash>=4.3
+transformers>=4.40
+torch>=2.0
+pandas>=2.0
+openpyxl>=3.1
+pyyaml>=6.0
+tqdm>=4.66
+reverse_geocoder>=1.5
