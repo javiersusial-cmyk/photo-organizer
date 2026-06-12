@@ -15,51 +15,55 @@ extensions:
   - .nef
   - .arw
 
-# Categorías temáticas y palabras clave que CLIP buscará
-# Puedes añadir o quitar categorías según tus necesidades
+# Categorías temáticas y palabras clave que CLIP buscará.
+# IMPORTANTE: Viajes NO está aquí — solo se asigna por GPS o nombre de carpeta.
+# CLIP se usa para distinguir entre Personas, Familia, Naturaleza, Eventos, etc.
 categories:
-  Viajes:
-    - "travel photo"
-    - "landscape travel"
-    - "tourist attraction"
-    - "city street travel"
-    - "beach vacation"
-    - "mountains travel"
   Personas:
-    - "portrait of a person"
-    - "group of people"
-    - "selfie"
-    - "people smiling"
+    - "portrait of a person facing the camera"
+    - "group of people posing for a photo"
+    - "selfie photo"
+    - "person smiling at camera"
+    - "friends together photo"
   Familia:
-    - "family photo"
-    - "family gathering"
-    - "children playing"
-    - "baby photo"
+    - "family photo indoors"
+    - "parents and children together"
+    - "baby or toddler photo"
+    - "grandparents with grandchildren"
+    - "family reunion indoors"
   Naturaleza:
-    - "nature landscape"
-    - "forest trees"
-    - "flowers garden"
-    - "sunset sunrise"
-    - "ocean sea"
-    - "mountains"
+    - "nature landscape no people"
+    - "forest and trees"
+    - "flowers in a garden"
+    - "sunset or sunrise sky"
+    - "beach and ocean waves"
+    - "mountain landscape"
+    - "river or lake landscape"
+    - "rural countryside"
   Animales:
-    - "pet animal"
-    - "dog cat"
-    - "wildlife animal"
-    - "bird animal"
+    - "pet dog or cat"
+    - "domestic animal"
+    - "wild animal in nature"
+    - "bird in nature"
+    - "farm animal"
   Comida:
-    - "food meal"
-    - "restaurant dish"
-    - "cooking food"
+    - "food on a plate"
+    - "restaurant meal"
+    - "home cooked food"
+    - "dessert or cake"
   Eventos:
-    - "birthday party"
-    - "wedding ceremony"
-    - "celebration event"
-    - "concert music"
+    - "birthday party with cake and candles"
+    - "wedding ceremony bride and groom"
+    - "graduation ceremony"
+    - "concert or live music crowd"
+    - "celebration party indoors"
+    - "christmas decoration"
+    - "communion or baptism ceremony"
   Documentos:
-    - "document paper text"
-    - "screenshot screen"
-    - "whiteboard diagram"
+    - "document or paper with text"
+    - "screenshot of a screen"
+    - "whiteboard with writing"
+    - "receipt or invoice"
 
 # Carpeta para fotos sin categoría clara
 fallback_category: Sin_clasificar
