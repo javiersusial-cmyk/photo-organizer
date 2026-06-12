@@ -31,6 +31,7 @@ from core.classifier import PhotoClassifier
 from core.organizer import build_dest_path, copy_photo
 from core.geocoder import coords_to_city
 from core.folder_hints import extract_folder_hints
+from core.event_grouper import group_events
 from core.checkpoint import Checkpoint
 from reports.inventory import InventoryRow, save_inventory
 
@@ -99,7 +100,9 @@ def main():
     parser.add_argument("--config",       default="config.yaml")
     parser.add_argument("--no-classify",  action="store_true", help="Omitir clasificación CLIP")
     parser.add_argument("--no-duplicates",action="store_true", help="Omitir detección de duplicados")
-    parser.add_argument("--no-gps",       action="store_true", help="Omitir geocodificación GPS")
+    parser.add_argument("--no-gps",        action="store_true", help="Omitir geocodificación GPS")
+    parser.add_argument("--event-gap",     type=float, default=12.0,
+                        help="Horas de brecha para considerar un evento distinto (default: 12)")
     parser.add_argument("--only-inventory",action="store_true", help="Solo inventario, sin copiar")
     parser.add_argument("--reset",        action="store_true", help="Ignorar checkpoint y empezar desde cero")
     args = parser.parse_args()
@@ -230,7 +233,7 @@ def main():
         total_gps = len(gps_city_map)
         print(f"      {total_gps} fotos con ciudad detectada por GPS")
 
-    # 4c. Combinar
+    # 4c. Combinar categoría base
     category_map: dict[Path, str]           = {}
     city_map:     dict[Path, Optional[str]] = {}
     for path in images:
@@ -244,6 +247,20 @@ def main():
         )
         category_map[path] = category
         city_map[path]     = city
+
+    # 4d. Agrupar Eventos en sub-eventos por proximidad temporal
+    print(f"  → Agrupando eventos (brecha {args.event_gap}h)...")
+    event_paths = [
+        (p, metadata_map[p].date_taken)
+        for p in images
+        if category_map[p] == "Eventos" and p not in duplicates
+    ]
+    if event_paths:
+        event_groups = group_events(event_paths, gap_hours=args.event_gap)
+        for path, sub_cat in event_groups.items():
+            category_map[path] = sub_cat
+        unique_events = len({v for v in event_groups.values()})
+        print(f"      {len(event_paths)} fotos de eventos → {unique_events} eventos distintos")
 
     # ── 5. Copiar y generar inventario ───────────────────────────────────────
     print("\n[5/5] Copiando fotos y generando inventario...")
