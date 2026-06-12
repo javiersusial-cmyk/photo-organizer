@@ -58,6 +58,24 @@ CONTEXT_PROMPTS: dict[str, list[str]] = {
         "amusement park or stadium",
         "natural wonder cave waterfall",
     ],
+    "comida": [
+        "food on a plate close up",
+        "a meal at a restaurant table",
+        "dessert cake or pastry",
+        "cooked dish or tapas",
+    ],
+    "animales": [
+        "a dog or cat pet close up",
+        "a wild animal",
+        "a bird",
+        "a farm animal like horse or cow",
+    ],
+    "documento": [
+        "a document or paper with text",
+        "a screenshot of a computer screen",
+        "a whiteboard or sign with writing",
+        "a receipt ticket or invoice",
+    ],
 }
 
 # Umbral mínimo de confianza para aceptar un contexto
@@ -225,6 +243,14 @@ class TwoStepClassifier:
         city = gps_city or hint_city
         if not city:
             city = self._landmark_from_feature(feat)
+
+        # 0. Documentos / Comida / Animales → primeros planos, máxima prioridad
+        if context == "documento":
+            return "Documentos", None
+        if context == "comida" and not person_dominant:
+            return "Comida", None
+        if context == "animales" and not person_dominant:
+            return "Animales", None
 
         # 1. Lugar especial o urbano → siempre Ciudades, independiente de personas
         if context in ("lugar_especial", "urbano"):

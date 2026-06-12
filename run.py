@@ -417,6 +417,18 @@ def main():
         unique_events = len({v for v in event_groups.values()})
         print(f"      {len(event_paths)} fotos de eventos → {unique_events} eventos distintos")
 
+    # 4f. Guardián: forzar lista cerrada de categorías
+    from core.categories import canonical
+    reconducidas = 0
+    for path in images:
+        original = category_map[path]
+        validada = canonical(original, fallback)
+        if validada != original:
+            reconducidas += 1
+        category_map[path] = validada
+    if reconducidas:
+        print(f"  → {reconducidas} fotos con categoría fuera de la lista → Sin_clasificar")
+
     # ── 5. Copiar y generar inventario ───────────────────────────────────────
     print("\n[5/5] Copiando fotos y generando inventario...")
     already_copied = ckpt.get_copied()
