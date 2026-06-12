@@ -35,6 +35,7 @@ from core.geocoder import coords_to_city
 from core.folder_hints import extract_folder_hints
 from core.event_grouper import group_events
 from core.clustering import VisualClusterer
+from core.detector import TwoStepClassifier
 from core.checkpoint import Checkpoint
 from reports.inventory import InventoryRow, save_inventory
 
@@ -136,6 +137,10 @@ def main():
     parser.add_argument(
         "--clean-dest", action="store_true",
         help="Vaciar carpeta destino preservando el checkpoint (para relanzar con nuevo criterio)"
+    )
+    parser.add_argument(
+        "--two-step", action="store_true",
+        help="Clasificación en dos pasos: YOLO (personas) + CLIP (contexto). Más preciso."
     )
     parser.add_argument(
         "--cluster", action="store_true",
@@ -246,47 +251,12 @@ def main():
     else:
         print("\n[3/5] Detección de duplicados omitida")
 
-    # ── 4. Clasificar (CLIP + GPS + hints) ───────────────────────────────────
+    # ── 4. Clasificar ────────────────────────────────────────────────────────
     print("\n[4/5] Clasificando imágenes...")
 
-    # 4a. CLIP
-    clip_map: dict[Path, str] = {}
-    if not args.no_classify:
-        classified = ckpt.classified_paths()
-        pending_clip = [p for p in images if str(p) not in classified and p not in duplicates]
-        already_clip = len(images) - len(duplicates) - len(pending_clip)
-
-        # Restaurar clasificaciones previas
-        for str_path, cat in ckpt.get_categories().items():
-            clip_map[Path(str_path)] = cat
-
-        if already_clip > 0:
-            print(f"  → CLIP: {already_clip} ya clasificadas (checkpoint). Clasificando {len(pending_clip)} restantes...")
-        else:
-            print(f"  → Clasificación temática con CLIP ({len(pending_clip)} fotos)...")
-
-        if pending_clip:
-            classifier = PhotoClassifier(categories=cfg["categories"], fallback=fallback)
-            for path in tqdm(pending_clip, unit="foto"):
-                cat = classifier.classify(path)
-                clip_map[path] = cat
-                ckpt.set_category(path, cat)
-                # Guardar cada 500 fotos para no perder demasiado progreso
-                if len(clip_map) % 500 == 0:
-                    ckpt.save()
-            ckpt.save()
-
-        for path in duplicates:
-            clip_map[path] = fallback
-    else:
-        print("  → Clasificación CLIP omitida")
-        for path in images:
-            clip_map[path] = fallback
-
-    # 4b. GPS → ciudad
+    # 4a. GPS → ciudad (siempre, independiente del modo de clasificación)
     gps_city_map: dict[Path, str] = {}
     if not args.no_gps:
-        # Restaurar ciudades del checkpoint
         for str_path, city in ckpt.get_cities().items():
             gps_city_map[Path(str_path)] = city
 
@@ -304,23 +274,98 @@ def main():
                     gps_city_map[path] = city
                     ckpt.set_city(path, city)
             ckpt.save()
-        total_gps = len(gps_city_map)
-        print(f"      {total_gps} fotos con ciudad detectada por GPS")
+        print(f"      {len(gps_city_map)} fotos con ciudad detectada por GPS")
 
-    # 4c. Combinar categoría base
+    # 4b. Clasificación: modo dos pasos (YOLO+CLIP) o CLIP solo
     category_map: dict[Path, str]           = {}
     city_map:     dict[Path, Optional[str]] = {}
-    for path in images:
-        hints = hints_map[path]
-        category, city = resolve_category_and_city(
-            clip_category  = clip_map.get(path, fallback),
-            hints_category = hints.category,
-            hints_city     = hints.city,
-            gps_city       = gps_city_map.get(path),
-            fallback       = fallback,
-        )
-        category_map[path] = category
-        city_map[path]     = city
+
+    classified    = ckpt.classified_paths()
+    pending_class = [p for p in images if str(p) not in classified and p not in duplicates]
+    already_class = len(images) - len(duplicates) - len(pending_class)
+
+    # Restaurar clasificaciones del checkpoint
+    for str_path, cat in ckpt.get_categories().items():
+        p = Path(str_path)
+        category_map[p] = cat
+
+    for path in duplicates:
+        category_map[path] = fallback
+        city_map[path]     = None
+
+    if getattr(args, 'two_step', False) and not args.no_classify:
+        # ── Modo dos pasos: YOLO + CLIP ──────────────────────────────────────
+        if already_class > 0:
+            print(f"  → Dos pasos (YOLO+CLIP): {already_class} ya clasificadas. "
+                  f"Clasificando {len(pending_class)} restantes...")
+        else:
+            print(f"  → Clasificación en dos pasos YOLO+CLIP ({len(pending_class)} fotos)...")
+
+        if pending_class:
+            two_step = TwoStepClassifier(fallback=fallback)
+            for path in tqdm(pending_class, unit="foto"):
+                gps_city = gps_city_map.get(path)
+                hints    = hints_map[path]
+                # Hints de carpeta tienen prioridad máxima
+                if hints.category:
+                    cat  = hints.category
+                    city = hints.city or (gps_city if hints.category == "Viajes" else None)
+                else:
+                    cat, city = two_step.classify(path, gps_city=gps_city)
+                category_map[path] = cat
+                city_map[path]     = city
+                ckpt.set_category(path, cat)
+                if city:
+                    ckpt.set_city(path, city)
+                if len(category_map) % 200 == 0:
+                    ckpt.save()
+            ckpt.save()
+
+        # Rellenar city_map para los ya restaurados del checkpoint
+        for path in images:
+            if path not in city_map:
+                city_map[path] = gps_city_map.get(path)
+
+    elif not args.no_classify:
+        # ── Modo CLIP solo (comportamiento anterior) ──────────────────────────
+        clip_map: dict[Path, str] = {p: v for p, v in category_map.items()}
+
+        if already_class > 0:
+            print(f"  → CLIP: {already_class} ya clasificadas. Clasificando {len(pending_class)} restantes...")
+        else:
+            print(f"  → Clasificación CLIP ({len(pending_class)} fotos)...")
+
+        if pending_class:
+            classifier = PhotoClassifier(categories=cfg["categories"], fallback=fallback)
+            for path in tqdm(pending_class, unit="foto"):
+                cat = classifier.classify(path)
+                clip_map[path] = cat
+                ckpt.set_category(path, cat)
+                if len(clip_map) % 500 == 0:
+                    ckpt.save()
+            ckpt.save()
+
+        for path in duplicates:
+            clip_map[path] = fallback
+
+        # Combinar con GPS y hints
+        for path in images:
+            hints = hints_map[path]
+            category, city = resolve_category_and_city(
+                clip_category  = clip_map.get(path, fallback),
+                hints_category = hints.category,
+                hints_city     = hints.city,
+                gps_city       = gps_city_map.get(path),
+                fallback       = fallback,
+            )
+            category_map[path] = category
+            city_map[path]     = city
+
+    else:
+        print("  → Clasificación omitida")
+        for path in images:
+            category_map[path] = fallback
+            city_map[path]     = None
 
     # 4d. Clustering visual para fotos sin clasificación fiable
     if args.cluster:
