@@ -143,6 +143,10 @@ def main():
         help="Clasificación en dos pasos: YOLO (personas) + CLIP (contexto). Más preciso."
     )
     parser.add_argument(
+        "--landmarks", action="store_true",
+        help="Reconocer monumentos famosos para deducir la ciudad sin GPS (best-effort, solo iconos distintivos)"
+    )
+    parser.add_argument(
         "--cluster", action="store_true",
         help="Activar clustering visual CLIP+DBSCAN para fotos sin GPS ni pista de carpeta"
     )
@@ -302,7 +306,10 @@ def main():
             print(f"  → Clasificación en dos pasos YOLO+CLIP ({len(pending_class)} fotos)...")
 
         if pending_class:
-            two_step = TwoStepClassifier(fallback=fallback)
+            two_step = TwoStepClassifier(
+                fallback=fallback,
+                detect_landmarks=getattr(args, 'landmarks', False),
+            )
             for path in tqdm(pending_class, unit="foto"):
                 gps_city = gps_city_map.get(path)
                 hints    = hints_map[path]
