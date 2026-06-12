@@ -248,9 +248,9 @@ class TwoStepClassifier:
                 return "Ciudades", city
             return "Naturaleza", None
 
-        # 4. Interior sin persona dominante
+        # 4. Interior sin persona dominante → Hogar (habitaciones, objetos, mobiliario)
         if context == "interior":
-            return "Personas", None
+            return "Hogar", None
 
         # 5. Sin contexto claro pero con ciudad → Ciudades
         if city:
