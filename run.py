@@ -93,9 +93,6 @@ def resolve_category_and_city(
     4. CLIP no detecta nada + GPS ciudad   → Ciudades/NombreCiudad/
     5. Sin nada                            → Sin_clasificar
     """
-    # Categorías "temáticas" que prevalecen sobre la ubicación GPS
-    THEMATIC = {"Personas", "Familia", "Animales", "Comida", "Eventos", "Documentos"}
-
     # 1. Carpeta origen ya organizada con ciudad → Viajes/Ciudad
     if hints_category == "Viajes" and (hints_city or gps_city):
         return "Viajes", hints_city or gps_city
@@ -104,15 +101,21 @@ def resolve_category_and_city(
     if hints_category:
         return hints_category, None
 
-    # 3. CLIP detecta algo temático → esa categoría, GPS ignorado para carpeta
+    # 3. CLIP detecta escena urbana → Ciudades/Ciudad si hay GPS
+    if clip_category == "Urbano":
+        if gps_city:
+            return "Ciudades", gps_city
+        return fallback, None   # urbano sin GPS → sin_clasificar
+
+    # 4. CLIP detecta algo temático → esa categoría
     if clip_category and clip_category != fallback:
         return clip_category, None
 
-    # 4. CLIP no ve nada claro pero hay GPS → Ciudades/NombreCiudad
+    # 5. CLIP no ve nada claro pero hay GPS → Ciudades/NombreCiudad
     if gps_city:
         return "Ciudades", gps_city
 
-    # 5. Sin clasificación posible
+    # 6. Sin clasificación posible
     return fallback, None
 
 
