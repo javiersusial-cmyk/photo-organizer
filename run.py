@@ -119,6 +119,10 @@ def main():
     parser.add_argument("--only-inventory",action="store_true", help="Solo inventario, sin copiar")
     parser.add_argument("--reset",        action="store_true", help="Ignorar checkpoint y empezar desde cero")
     parser.add_argument(
+        "--clean-dest", action="store_true",
+        help="Vaciar carpeta destino preservando el checkpoint (para relanzar con nuevo criterio)"
+    )
+    parser.add_argument(
         "--cluster", action="store_true",
         help="Activar clustering visual CLIP+DBSCAN para fotos sin GPS ni pista de carpeta"
     )
@@ -141,12 +145,38 @@ def main():
     dest_root   = Path(args.dest)
     fallback    = cfg.get("fallback_category", "Sin_clasificar")
 
+    # ── Limpiar destino preservando checkpoint ────────────────────────────────
+    if args.clean_dest and dest_root.exists():
+        import shutil, tempfile
+        ckpt_path = dest_root / "checkpoint.json"
+        tmp_ckpt  = None
+        if ckpt_path.exists():
+            tmp_ckpt = Path(tempfile.mktemp(suffix=".json"))
+            ckpt_path.rename(tmp_ckpt)
+            print(f"  Checkpoint guardado temporalmente en {tmp_ckpt}")
+        shutil.rmtree(dest_root)
+        dest_root.mkdir(parents=True)
+        if tmp_ckpt and tmp_ckpt.exists():
+            tmp_ckpt.rename(dest_root / "checkpoint.json")
+            print("  Checkpoint restaurado. Destino limpio.")
+        else:
+            print("  Destino limpiado (sin checkpoint previo).")
+
     # ── Checkpoint ───────────────────────────────────────────────────────────
     ckpt = Checkpoint(dest_root)
     if args.reset:
         print("  --reset: ignorando checkpoint previo.")
     else:
         ckpt.load()
+        if args.clean_dest:
+            # Destino vacío — resetear solo lo relativo a copia y clasificación
+            # pero conservar metadatos, duplicados y ciudades GPS ya calculados
+            ckpt._data["copied"]     = {}
+            ckpt._data["categories"] = {}
+            if "classification" in ckpt._data.get("phases_done", []):
+                ckpt._data["phases_done"].remove("classification")
+            ckpt.save()
+            print("  Checkpoint: copiado y clasificación reseteados, metadatos conservados.")
 
     # ── 1. Escanear ──────────────────────────────────────────────────────────
     print(f"\n[1/5] Escaneando fotos en: {args.source}")
