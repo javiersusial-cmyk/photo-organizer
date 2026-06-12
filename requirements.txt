@@ -8,3 +8,6 @@ openpyxl>=3.1
 pyyaml>=6.0
 tqdm>=4.66
 reverse_geocoder>=1.5
+scikit-learn>=1.3
+numpy>=1.24
+umap-learn>=0.5  # opcional, mejora calidad del clustering

@@ -7,6 +7,8 @@ Uso:
     python run.py --source ./mis_fotos --dest ./fotos_organizadas --no-duplicates
     python run.py --source ./mis_fotos --dest ./fotos_organizadas --only-inventory
     python run.py --source ./mis_fotos --dest ./fotos_organizadas --reset
+    python run.py --source ./mis_fotos --dest ./fotos_organizadas --cluster
+    python run.py --source ./mis_fotos --dest ./fotos_organizadas --delete-source
 
 Si el proceso se interrumpe, al relanzar con los mismos argumentos
 continúa desde la última fase completada.
@@ -32,6 +34,7 @@ from core.organizer import build_dest_path, copy_photo
 from core.geocoder import coords_to_city
 from core.folder_hints import extract_folder_hints
 from core.event_grouper import group_events
+from core.clustering import VisualClusterer
 from core.checkpoint import Checkpoint
 from reports.inventory import InventoryRow, save_inventory
 
@@ -105,6 +108,22 @@ def main():
                         help="Horas de brecha para considerar un evento distinto (default: 12)")
     parser.add_argument("--only-inventory",action="store_true", help="Solo inventario, sin copiar")
     parser.add_argument("--reset",        action="store_true", help="Ignorar checkpoint y empezar desde cero")
+    parser.add_argument(
+        "--cluster", action="store_true",
+        help="Activar clustering visual CLIP+DBSCAN para fotos sin GPS ni pista de carpeta"
+    )
+    parser.add_argument(
+        "--cluster-eps", type=float, default=0.35,
+        help="Sensibilidad del clustering: menor=clusters más compactos (default: 0.35)"
+    )
+    parser.add_argument(
+        "--cluster-min", type=int, default=3,
+        help="Mínimo de fotos para formar un cluster (default: 3)"
+    )
+    parser.add_argument(
+        "--delete-source", action="store_true",
+        help="ELIMINAR la carpeta origen tras copiar correctamente todas las fotos"
+    )
     args = parser.parse_args()
 
     cfg         = load_config(args.config)
@@ -248,7 +267,32 @@ def main():
         category_map[path] = category
         city_map[path]     = city
 
-    # 4d. Agrupar Eventos en sub-eventos por proximidad temporal
+    # 4d. Clustering visual para fotos sin clasificación fiable
+    if args.cluster:
+        # Solo se clusterizan fotos que han caído en fallback y no tienen GPS ni hint
+        to_cluster = [
+            p for p in images
+            if p not in duplicates
+            and category_map[p] == fallback
+            and p not in gps_city_map
+            and not hints_map[p].category
+        ]
+        if to_cluster:
+            print(f"\n  → Clustering visual ({len(to_cluster)} fotos sin clasificar)...")
+            clusterer = VisualClusterer(
+                categories  = cfg["categories"],
+                fallback    = fallback,
+                eps         = args.cluster_eps,
+                min_samples = args.cluster_min,
+            )
+            cluster_result = clusterer.cluster(to_cluster)
+            for path, cat in cluster_result.items():
+                category_map[path] = cat
+                city_map[path]     = None
+        else:
+            print("  → Clustering: no hay fotos sin clasificar, omitido.")
+
+    # 4e. Agrupar Eventos en sub-eventos por proximidad temporal
     print(f"  → Agrupando eventos (brecha {args.event_gap}h)...")
     event_paths = [
         (p, metadata_map[p].date_taken)
@@ -331,6 +375,17 @@ def main():
     # Eliminar checkpoint solo si todo fue bien y no es solo inventario
     if not args.only_inventory:
         ckpt.delete()
+
+    # ── Borrar carpeta origen (opcional, requiere confirmación) ───────────────
+    if args.delete_source and not args.only_inventory:
+        import shutil
+        print(f"\n  ATENCIÓN: Se va a eliminar la carpeta origen: {source_root.resolve()}")
+        confirm = input("  Escribe 'BORRAR' para confirmar (cualquier otra cosa cancela): ").strip()
+        if confirm == "BORRAR":
+            shutil.rmtree(source_root)
+            print(f"  Carpeta origen eliminada: {source_root}")
+        else:
+            print("  Borrado cancelado.")
 
     # ── Resumen ──────────────────────────────────────────────────────────────
     unique_rows = [r for r in inventory_rows if not r.duplicado_de]
