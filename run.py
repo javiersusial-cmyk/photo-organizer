@@ -85,22 +85,34 @@ def resolve_category_and_city(
     fallback: str,
 ) -> tuple[str, Optional[str]]:
     """
-    Prioridad: hint carpeta > CLIP > fallback.
-    El GPS aporta la ciudad pero NO fuerza la categoría Viajes.
-    Solo se usa como ciudad si CLIP ya clasificó la foto como Viajes,
-    o si el hint de carpeta indica Viajes.
+    Lógica de clasificación:
+
+    1. Hint de carpeta con ciudad + viaje  → Viajes/Ciudad/   (respeta origen)
+    2. Hint de carpeta sin ciudad          → categoría del hint
+    3. CLIP detecta algo específico        → esa categoría (GPS ignorado para carpeta)
+    4. CLIP no detecta nada + GPS ciudad   → Ciudades/NombreCiudad/
+    5. Sin nada                            → Sin_clasificar
     """
-    # 1. Carpeta origen ya organizada — máxima confianza
+    # Categorías "temáticas" que prevalecen sobre la ubicación GPS
+    THEMATIC = {"Personas", "Familia", "Animales", "Comida", "Eventos", "Documentos"}
+
+    # 1. Carpeta origen ya organizada con ciudad → Viajes/Ciudad
+    if hints_category == "Viajes" and (hints_city or gps_city):
+        return "Viajes", hints_city or gps_city
+
+    # 2. Carpeta origen ya organizada sin ciudad → respetar categoría
     if hints_category:
-        city = hints_city or (gps_city if hints_category == "Viajes" else None)
-        return hints_category, city
+        return hints_category, None
 
-    # 2. CLIP decide la categoría; GPS enriquece con ciudad si es Viajes
+    # 3. CLIP detecta algo temático → esa categoría, GPS ignorado para carpeta
     if clip_category and clip_category != fallback:
-        city = gps_city if clip_category == "Viajes" else None
-        return clip_category, city
+        return clip_category, None
 
-    # 3. Fallback — si tiene GPS al menos ponemos la ciudad en Sin_clasificar
+    # 4. CLIP no ve nada claro pero hay GPS → Ciudades/NombreCiudad
+    if gps_city:
+        return "Ciudades", gps_city
+
+    # 5. Sin clasificación posible
     return fallback, None
 
 
@@ -388,7 +400,12 @@ def main():
         else:
             final_dest = str(dest_path)
 
-        tematica_full = f"Viajes/{city}" if category == "Viajes" and city else category
+        if category == "Viajes" and city:
+            tematica_full = f"Viajes/{city}"
+        elif category == "Ciudades" and city:
+            tematica_full = f"Ciudades/{city}"
+        else:
+            tematica_full = category
         inventory_rows.append(InventoryRow(
             archivo_origen  = str(path),
             nombre          = path.name,
