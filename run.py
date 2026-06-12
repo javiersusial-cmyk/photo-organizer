@@ -311,7 +311,11 @@ def main():
                     cat  = hints.category
                     city = hints.city or (gps_city if hints.category == "Viajes" else None)
                 else:
-                    cat, city = two_step.classify(path, gps_city=gps_city)
+                    cat, city = two_step.classify(
+                        path,
+                        gps_city  = gps_city,
+                        hint_city = hints.city,
+                    )
                 category_map[path] = cat
                 city_map[path]     = city
                 ckpt.set_category(path, cat)

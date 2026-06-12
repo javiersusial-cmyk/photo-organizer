@@ -144,45 +144,80 @@ class TwoStepClassifier:
         except Exception:
             return None
 
-    def classify(self, path: Path, gps_city: Optional[str] = None) -> tuple[str, Optional[str]]:
+    def _person_area_ratio(self, path: Path) -> float:
+        """Devuelve el ratio del área de la persona más grande respecto a la imagen (0-1)."""
+        try:
+            from PIL import Image as PILImage
+            img_w, img_h = PILImage.open(path).size
+            img_area = img_w * img_h
+            results = self._yolo(str(path), verbose=False, classes=[0])
+            max_ratio = 0.0
+            for r in results:
+                for box in r.boxes:
+                    if float(box.conf[0]) >= PERSON_CONFIDENCE:
+                        x1, y1, x2, y2 = box.xyxy[0].tolist()
+                        ratio = ((x2 - x1) * (y2 - y1)) / img_area
+                        max_ratio = max(max_ratio, ratio)
+            return max_ratio
+        except Exception:
+            return 0.0
+
+    def classify(
+        self,
+        path: Path,
+        gps_city: Optional[str] = None,
+        hint_city: Optional[str] = None,
+    ) -> tuple[str, Optional[str]]:
         """
         Devuelve (categoria, ciudad_o_None).
 
         Lógica:
-          personas + interior                → ("Personas", None)
-          personas + exterior + GPS          → ("Viajes", ciudad)
-          personas + exterior + sin GPS      → ("Personas", None)
-          sin personas + urbano/especial+GPS → ("Ciudades", ciudad)
-          sin personas + urbano sin GPS      → ("Ciudades", "Sin_ubicacion")
-          sin personas + naturaleza          → ("Naturaleza", None)
-          resto                              → (fallback, None)
+          lugar_especial/urbano              → Ciudades/ciudad (persona secundaria no cambia esto)
+          personas dominantes + interior     → Personas
+          personas dominantes + exterior+ciudad → Viajes/ciudad
+          personas dominantes + exterior sin ciudad → Personas
+          naturaleza                         → Naturaleza
+          sin contexto claro + ciudad        → Ciudades/ciudad
+          resto                              → fallback
         """
         if self._yolo is None:
             self._load_yolo()
         if self._clip_model is None:
             self._load_clip()
 
-        has_person = self._has_person(path)
         context    = self._get_context(path)
+        city       = gps_city or hint_city   # GPS primero, luego hint de carpeta
+        person_ratio = self._person_area_ratio(path)
 
-        if has_person:
+        # Persona "dominante" = ocupa más del 10% de la imagen
+        person_dominant = person_ratio >= 0.10
+
+        # 1. Lugar especial o urbano → siempre Ciudades, independiente de personas
+        if context in ("lugar_especial", "urbano"):
+            if city:
+                return "Ciudades", city
+            return "Ciudades", "Sin_ubicacion"
+
+        # 2. Persona dominante
+        if person_dominant:
             if context == "interior":
                 return "Personas", None
-            else:
-                # Exterior con personas
-                if gps_city:
-                    return "Viajes", gps_city
-                return "Personas", None
-        else:
-            if context in ("urbano", "lugar_especial"):
-                if gps_city:
-                    return "Ciudades", gps_city
-                return "Ciudades", "Sin_ubicacion"
-            elif context == "naturaleza":
-                return "Naturaleza", None
-            elif context == "interior":
-                return "Personas", None  # interior sin personas detectadas → probablemente objetos del hogar
-            else:
-                if gps_city:
-                    return "Ciudades", gps_city
-                return self.fallback, None
+            # Exterior con persona dominante
+            if city:
+                return "Viajes", city
+            return "Personas", None
+
+        # 3. Naturaleza sin persona dominante
+        if context == "naturaleza":
+            return "Naturaleza", None
+
+        # 4. Interior sin persona dominante
+        if context == "interior":
+            return "Personas", None
+
+        # 5. Sin contexto claro pero con ciudad → Ciudades
+        if city:
+            return "Ciudades", city
+
+        # 6. Sin nada clasificable
+        return self.fallback, None
