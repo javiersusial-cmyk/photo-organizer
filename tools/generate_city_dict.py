@@ -187,6 +187,72 @@ def parse_country(txt_path: Path, min_pop: int) -> dict[str, str]:
 
 # ── Generación del fichero ────────────────────────────────────────────────────
 
+# Código de la función matcher que se emite en el geocoder.py generado.
+# Coincidencia por palabra completa (no subcadena) para evitar falsos positivos.
+_MATCHER_CODE = '''
+import re as _re2
+import unicodedata as _ud
+
+_MATCH_MIN_LEN = 4
+
+_STOPWORDS = {
+    "foto", "fotos", "photo", "photos", "image", "images", "img", "imagen",
+    "imagenes", "video", "videos", "dcim", "piso", "casa", "hogar", "varios",
+    "otros", "nuevo", "nueva", "copia", "backup", "movil", "camara", "camera",
+    "whatsapp", "screenshot", "captura", "descargas", "download", "downloads",
+    "documentos", "documents", "escritorio", "desktop", "takeout", "google",
+}
+
+_single_index = None
+_multi_index = None
+
+
+def _norm_text(s):
+    nfkd = _ud.normalize("NFKD", s.lower())
+    return "".join(c for c in nfkd if not _ud.combining(c))
+
+
+def _build_index():
+    global _single_index, _multi_index
+    _single_index = {}
+    _multi_index = {}
+    for kw, city in FOLDER_CITY_KEYWORDS.items():
+        words = [w for w in _re2.split(r"[^a-z0-9]+", _norm_text(kw)) if w]
+        if not words:
+            continue
+        phrase = " ".join(words)
+        if len(phrase) < _MATCH_MIN_LEN:
+            continue
+        if len(words) == 1:
+            if words[0] in _STOPWORDS:
+                continue
+            _single_index.setdefault(words[0], city)
+        else:
+            _multi_index.setdefault(words[0], []).append((tuple(words), city))
+
+
+def city_from_folder_name(folder_name):
+    """Detecta una ciudad por coincidencia de palabra completa."""
+    if _single_index is None:
+        _build_index()
+    tokens = [t for t in _re2.split(r"[^a-z0-9]+", _norm_text(folder_name)) if t]
+    if not tokens:
+        return None
+    for i, tok in enumerate(tokens):
+        cands = _multi_index.get(tok)
+        if cands:
+            for words, city in cands:
+                n = len(words)
+                if tuple(tokens[i:i + n]) == words:
+                    return city
+    for tok in tokens:
+        city = _single_index.get(tok)
+        if city:
+            return city
+    return None
+'''
+
+
 def generate(countries: list[str], min_pop: int, output_path: Path):
     all_entries: dict[str, dict[str, str]] = {}  # country → {keyword: slug}
 
@@ -246,16 +312,7 @@ def generate(countries: list[str], min_pop: int, output_path: Path):
 
     lines.append("}\n")
     lines.append("")
-    lines.append("def city_from_folder_name(folder_name: str) -> Optional[str]:")
-    lines.append('    """Detecta una ciudad conocida en el nombre de la carpeta."""')
-    lines.append("    import unicodedata")
-    lines.append("    lower = folder_name.lower()")
-    lines.append("    nfkd = unicodedata.normalize('NFKD', lower)")
-    lines.append("    normalized = ''.join(c for c in nfkd if not unicodedata.combining(c))")
-    lines.append("    for keyword, city in FOLDER_CITY_KEYWORDS.items():")
-    lines.append("        if keyword in lower or keyword in normalized:")
-    lines.append("            return city")
-    lines.append("    return None")
+    lines.append(_MATCHER_CODE)
 
     output_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"\n  Fichero generado: {output_path}")
