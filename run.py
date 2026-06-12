@@ -84,13 +84,23 @@ def resolve_category_and_city(
     gps_city: Optional[str],
     fallback: str,
 ) -> tuple[str, Optional[str]]:
-    """Prioridad: hint carpeta > GPS > CLIP > fallback."""
+    """
+    Prioridad: hint carpeta > CLIP > fallback.
+    El GPS aporta la ciudad pero NO fuerza la categoría Viajes.
+    Solo se usa como ciudad si CLIP ya clasificó la foto como Viajes,
+    o si el hint de carpeta indica Viajes.
+    """
+    # 1. Carpeta origen ya organizada — máxima confianza
     if hints_category:
-        return hints_category, hints_city or gps_city
-    if gps_city:
-        return "Viajes", gps_city
+        city = hints_city or (gps_city if hints_category == "Viajes" else None)
+        return hints_category, city
+
+    # 2. CLIP decide la categoría; GPS enriquece con ciudad si es Viajes
     if clip_category and clip_category != fallback:
-        return clip_category, None
+        city = gps_city if clip_category == "Viajes" else None
+        return clip_category, city
+
+    # 3. Fallback — si tiene GPS al menos ponemos la ciudad en Sin_clasificar
     return fallback, None
 
 
