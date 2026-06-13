@@ -36,8 +36,11 @@ from core.metadata import extract_metadata
 from core.folder_context import analyze_folder
 from core.catalog import Catalog
 
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".tiff", ".tif", ".bmp",
-              ".gif", ".webp", ".cr2", ".nef", ".arw"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tiff", ".tif",
+              ".bmp", ".gif", ".webp",
+              # RAW de distintas marcas
+              ".cr2", ".cr3", ".nef", ".arw", ".dng", ".pef", ".raf",
+              ".orf", ".rw2", ".srw", ".raw", ".x3f"}
 
 
 def sanitize(name: str) -> str:
@@ -194,12 +197,30 @@ def main():
                     skipped_dup += 1
 
     # ── Guardar preview ───────────────────────────────────────────────────────
-    preview_csv = dest_root / ("preview_dryrun.csv" if args.dry_run else "ultima_ejecucion.csv")
+    base_name = "preview_dryrun" if args.dry_run else "ultima_ejecucion"
+    preview_csv = dest_root / f"{base_name}.csv"
     dest_root.mkdir(parents=True, exist_ok=True)
-    with open(preview_csv, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f)
-        w.writerow(["origen", "destino", "año", "categoria", "via"])
-        w.writerows(preview_rows)
+
+    def _write_csv(path: Path) -> bool:
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                w = csv.writer(f)
+                w.writerow(["origen", "destino", "año", "categoria", "via"])
+                w.writerows(preview_rows)
+            return True
+        except PermissionError:
+            return False
+
+    if not _write_csv(preview_csv):
+        # Fichero bloqueado (abierto en Excel) → escribir con marca de tiempo
+        from datetime import datetime as _dt
+        alt = dest_root / f"{base_name}_{_dt.now():%Y%m%d_%H%M%S}.csv"
+        if _write_csv(alt):
+            print(f"\n  AVISO: '{preview_csv.name}' estaba bloqueado (¿abierto en Excel?).")
+            print(f"  Preview guardado en: {alt.name}")
+            preview_csv = alt
+        else:
+            print(f"\n  AVISO: no se pudo escribir el preview CSV (sin permisos).")
 
     # ── Resumen ───────────────────────────────────────────────────────────────
     print("\n" + "=" * 60)
