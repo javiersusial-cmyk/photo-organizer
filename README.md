@@ -1,131 +1,148 @@
 # 📷 Photo Organizer
 
-Herramienta en Python para clasificar, desduplicar y organizar colecciones grandes de fotos (miles o decenas de miles de imágenes).
+Herramienta en Python para organizar, deduplicar y catalogar colecciones grandes de fotos (decenas de miles de imágenes), ejecutándose en local.
 
-> ## ⭐ Motor principal: `consolidate.py`
->
-> El flujo recomendado es el **consolidador v2**, que conserva los nombres de
-> carpeta que ya tienen sentido (viajes, ciudades, eventos), asigna el año,
-> agrupa lo suelto por sesiones de fecha y deduplica con un catálogo SQLite único.
->
-> **Documentación y flujo paso a paso → [wiki/consolidador.md](wiki/consolidador.md)**
->
-> Resumen del flujo:
-> 1. Preview principal (`--dry-run`) → revisar CSV
-> 2. Ejecución real de la principal → llena el catálogo
-> 3. Preview de Google (`--google --skip-existing --dry-run`)
-> 4. Ejecución real de Google
->
-> El `run.py` original (clasificación CLIP/YOLO completa) sigue disponible pero
-> es un enfoque anterior; ver secciones de abajo.
+El método principal es el **consolidador** (`consolidate.py`): respeta tu organización manual, agrupa lo suelto por fecha y mantiene un catálogo único para no duplicar nada entre ejecuciones.
 
-## ¿Qué hace? (run.py — enfoque original)
+---
 
-1. **Escanea** carpetas y subcarpetas buscando imágenes
-2. **Extrae metadatos EXIF** (fecha, cámara, coordenadas GPS)
-3. **Detecta duplicados** mediante hash perceptual (imagehash)
-4. **Clasifica temáticamente** con el modelo CLIP (IA local, sin internet)
-5. **Geocodifica** coordenadas GPS a ciudad/país (offline, ~50 MB)
-6. **Respeta estructura existente** — si tus carpetas ya tienen nombre de ciudad o año, los conserva
-7. **Agrupa eventos** — fotos de la misma categoría separadas por más de N horas van a carpetas distintas (`Evento_01`, `Evento_02`...)
-8. **Copia** las fotos organizadas a la carpeta destino (el original no se toca)
-9. **Genera inventario** en CSV y Excel con todos los metadatos
-10. **Checkpoint** — si el proceso se interrumpe, al relanzar continúa donde se quedó
+## Cómo organiza las fotos
 
-## Estructura de salida
+| Situación en origen | Resultado |
+|---------------------|-----------|
+| Carpeta con sentido (`Viajes/2011 Venecia-Paris`, `Ciudades/Bilbao`, `Boda...`) | Conserva el nombre, deduce el tipo y asigna el año → `Año YYYY / Tipo - Nombre (fecha)` |
+| Volcado sin contexto (`Camaras/Fotos Pentax`, fechas sueltas) | Agrupa por **sesiones de fecha/hora** → `Año YYYY / Sin clasificar / 2007-06-14` |
+| Sesión de menos de 5 fotos o sin fecha | `Sin clasificar / resto` |
+| IA opcional (`--ai`, última capa) | Solo sobre el "resto": reparte en Personas / Naturaleza / Ciudades (+monumentos) |
+| Duplicado exacto (mismo nombre + metadatos) | Se copia a `Duplicadas/` para revisión (nunca se pierde nada) |
+
+### Estructura de salida
 
 ```
-fotos_organizadas/
-├── 2022/
-│   ├── Viajes/
-│   │   ├── Donostia/
-│   │   ├── Paris/
-│   │   └── Roma/
-│   ├── Eventos/
-│   │   ├── Evento_01/
-│   │   └── Evento_02/
-│   ├── Personas/
-│   ├── Familia/
-│   └── Sin_clasificar/
-├── _Duplicados/
-│   └── 2022/
-├── mis_fotos_inventario.csv
-└── mis_fotos_inventario.xlsx
+C:\Fotos catalogadas\
+├── Año 2005\
+│   ├── Viaje - Tanzania (2005 Noviembre)\
+│   ├── Ciudad - Bilbao (2005)\
+│   ├── Evento - Boda Javi y Maria (20051112)\
+│   └── Sin clasificar\
+│       ├── 2005-07-07\
+│       └── resto\
+├── Google fotos\        ← solo fotos de Google que no existían en el destino
+├── Duplicadas\          ← copias detectadas, para revisar antes de borrar
+├── catalogo.db          ← catálogo único (deduplicación entre ejecuciones)
+├── preview_dryrun.csv   ← plan de la última previsualización
+└── errores.csv          ← incidencias de lectura (ficheros dañados, etc.)
 ```
+
+---
 
 ## Instalación
 
-```bash
-# Clonar el repositorio
-git clone <url-del-repo>
+```powershell
+git clone https://github.com/javiersusial-cmyk/photo-organizer.git
 cd photo-organizer
 
-# Crear entorno virtual (recomendado)
 python -m venv .venv
-.venv\Scripts\activate        # Windows
-source .venv/bin/activate     # Mac/Linux
+.venv\Scripts\activate
 
-# Instalar dependencias
 pip install -r requirements.txt
 ```
 
-> **Nota:** La primera ejecución con clasificación CLIP descarga el modelo (~1.5 GB). Solo ocurre una vez.
+> La IA (`--ai`) descarga modelos (~1.5 GB CLIP + 6 MB YOLO) la primera vez. Si no usas `--ai`, no hacen falta.
 
-## Uso
+---
 
-```bash
-# Clasificación completa
-python run.py --source "D:\MisFotos" --dest "D:\FotosOrganizadas"
+## Flujo recomendado (paso a paso)
 
-# Sin clasificación CLIP (más rápido, usa solo GPS y nombres de carpeta)
-python run.py --source "D:\MisFotos" --dest "D:\FotosOrganizadas" --no-classify
+Mantén **siempre el mismo `--dest`**: ahí vive `catalogo.db`, que evita duplicar entre pasadas.
 
-# Solo inventario, sin copiar ficheros
-python run.py --source "D:\MisFotos" --dest "D:\FotosOrganizadas" --only-inventory
+> **Importante:** la colección principal se hace **real antes** de previsualizar Google,
+> porque `--skip-existing` compara contra las fotos que ya hay en el destino.
 
-# Ajustar brecha entre eventos (default 12h)
-python run.py --source "D:\MisFotos" --dest "D:\FotosOrganizadas" --event-gap 24
+### 1. Preview de la colección principal (rápido, no copia nada)
 
-# Empezar desde cero (ignorar checkpoint)
-python run.py --source "D:\MisFotos" --dest "D:\FotosOrganizadas" --reset
+```powershell
+python consolidate.py --source "C:\...\Fotos mias" --dest "C:\Fotos catalogadas" --dry-run
 ```
 
-## Opciones
+Revisa el plan en `C:\Fotos catalogadas\preview_dryrun.csv` (ciérralo en Excel antes de relanzar).
+
+### 2. Ejecución REAL de la principal (copia y llena el catálogo)
+
+```powershell
+python consolidate.py --source "C:\...\Fotos mias" --dest "C:\Fotos catalogadas"
+```
+
+### 3. Preview de Google (ya ve lo que hay en el destino)
+
+```powershell
+python consolidate.py --source "C:\...\Fotos Google photos 210331" --dest "C:\Fotos catalogadas" --google --skip-existing --dry-run
+```
+
+### 4. Ejecución REAL de Google
+
+```powershell
+python consolidate.py --source "C:\...\Fotos Google photos 210331" --dest "C:\Fotos catalogadas" --google --skip-existing
+```
+
+Solo las fotos de Google que **no existían** en ningún sitio del destino se copian a `Google fotos/`.
+
+---
+
+## Comprobar dónde va una foto
+
+Antes o después de copiar, consulta el destino de cualquier foto por nombre (o parte):
+
+```powershell
+# Por nombre exacto
+python buscar.py --dest "C:\Fotos catalogadas" _IGP1032.DNG
+
+# Por parte del nombre
+python buscar.py --dest "C:\Fotos catalogadas" IMGP0334
+
+# Por carpeta/lugar
+python buscar.py --dest "C:\Fotos catalogadas" sudafrica
+```
+
+Muestra, para cada coincidencia, el **origen**, el **destino** y la **vía** (`Carpeta`, `IA`, `Duplicada`). Busca tanto en el preview (plan) como en el catálogo (lo ya colocado).
+
+---
+
+## Opciones de `consolidate.py`
 
 | Opción | Descripción |
 |--------|-------------|
-| `--source` | Carpeta origen con las fotos (obligatorio) |
-| `--dest` | Carpeta destino organizada (obligatorio) |
-| `--config` | Fichero de configuración (default: `config.yaml`) |
-| `--no-classify` | Omitir clasificación CLIP |
-| `--no-duplicates` | Omitir detección de duplicados |
-| `--no-gps` | Omitir geocodificación inversa GPS |
-| `--only-inventory` | Solo generar inventario, sin copiar |
-| `--event-gap` | Horas de brecha para separar eventos (default: 12) |
-| `--reset` | Ignorar checkpoint y empezar desde cero |
+| `--source` | Carpeta origen (obligatorio) |
+| `--dest` | Carpeta destino — siempre la misma (contiene `catalogo.db`) |
+| `--dry-run` | Previsualiza sin copiar ni tocar el catálogo |
+| `--ai` | IA como última capa sobre el "resto" |
+| `--landmark-threshold` | Sensibilidad de monumentos (default 0.30) |
+| `--session-gap` | Horas para una nueva sesión (default 12) |
+| `--google` | Fase Google: las nuevas van a `Google fotos/` |
+| `--skip-existing` | No copia fotos cuyo nombre ya exista en cualquier carpeta del destino |
+| `--catalog` | Ruta alternativa del catálogo |
 
-## Rendimiento estimado (145.000 fotos / 200 GB)
+---
 
-| Fase | Tiempo estimado |
-|------|----------------|
-| Escaneo + EXIF | 20-30 min |
-| Duplicados | 2-3 horas |
-| Clasificación CLIP | 8-15 horas (CPU) |
-| Geocodificación GPS | 5-10 min |
-| Copia | depende del disco |
+## Garantías
 
-Con GPU Nvidia, CLIP se acelera ~10x automáticamente.
+- **El origen nunca se toca** (se copia, no se mueve). Borra tú al final, tras revisar.
+- **Nada se pierde**: los duplicados van a `Duplicadas/` y los ficheros ilegibles quedan listados en `errores.csv`.
+- **Multi-paso seguro**: el catálogo recuerda lo ya colocado; puedes parar y reanudar.
+- **El `--dry-run` no modifica el catálogo**: previsualiza cuanto quieras.
+
+---
+
+## Documentación
+
+- **[Consolidador — guía completa y flujo](wiki/consolidador.md)** ⭐
+- [Categorías (lista cerrada)](wiki/categorias.md)
+- [Solución de problemas](wiki/troubleshooting.md)
+
+### Enfoque anterior (`run.py`)
+
+El `run.py` original hace una clasificación 100% por IA (CLIP/YOLO) con inventario Excel, geocodificación GPS y checkpoint. Sigue disponible pero el método recomendado es el consolidador. Su documentación: [clasificación](wiki/clasificacion.md), [clustering](wiki/clustering.md), [checkpoint](wiki/checkpoint.md), [ciudades](wiki/ciudades.md), [configuración](wiki/configuracion.md).
 
 ## Dependencias
 
-Ver [requirements.txt](requirements.txt)
-
-## Wiki
-
-Consulta la [wiki del proyecto](wiki/) para documentación detallada:
-
-- [Configuración](wiki/configuracion.md) — cómo personalizar categorías y ciudades
-- [Cómo funciona la clasificación](wiki/clasificacion.md)
-- [Checkpoint y rearranque](wiki/checkpoint.md)
-- [Añadir nuevas ciudades](wiki/ciudades.md)
-- [Solución de problemas](wiki/troubleshooting.md)
+Ver [requirements.txt](requirements.txt).
