@@ -153,7 +153,10 @@ def main():
     ap.add_argument("--landmark-threshold", type=float, default=0.30,
                     help="Umbral de monumentos (más alto = menos falsos positivos)")
     ap.add_argument("--google", action="store_true",
-                    help="Fase Google: solo copia fotos cuyo nombre NO esté en el catálogo")
+                    help="Fase Google: las nuevas van a 'Google fotos/' con estructura año/clasificación")
+    ap.add_argument("--skip-existing", action="store_true",
+                    help="No copiar fotos cuyo nombre ya exista en CUALQUIER carpeta del destino "
+                         "(escaneo del árbol real, no solo del catálogo). Pensado para la fase Google.")
     args = ap.parse_args()
 
     source_root = Path(args.source)
@@ -172,6 +175,15 @@ def main():
     total = sum(len(v) for v in groups.values())
     print(f"  {total} imágenes en {len(groups)} carpetas")
 
+    # ── Índice de nombres existentes en TODO el destino (para --skip-existing) ──
+    dest_index: set[str] = set()
+    if args.skip_existing and dest_root.exists():
+        print("Indexando nombres existentes en el destino (árbol completo)...")
+        for p in dest_root.rglob("*"):
+            if p.is_file():
+                dest_index.add(p.name.lower())
+        print(f"  {len(dest_index)} nombres ya presentes en el destino")
+
     # IA perezosa (solo si se necesita)
     classifier = None
 
@@ -185,7 +197,7 @@ def main():
     preview_rows: list[tuple] = []
     error_rows: list[tuple] = []
     stats = Counter()
-    copied = skipped_google = dup_to_review = 0
+    copied = skipped_google = dup_to_review = skipped_existing = 0
     no_legibles = sin_exif = 0
     seen_keys: set[str] = set()   # claves ya colocadas en esta ejecución
 
@@ -228,6 +240,11 @@ def main():
                 error_rows.append((str(src), ext, "sin EXIF (ok)",
                                    "no", "sí" if meta.date_taken else "no",
                                    "Formato sin EXIF legible; se usa fecha de archivo"))
+
+            # ── No copiar si el nombre ya existe en cualquier carpeta del destino ──
+            if args.skip_existing and src.name.lower() in dest_index:
+                skipped_existing += 1
+                continue
 
             # ── Fase Google: si el nombre ya existe en catálogo, descartar ──
             if args.google:
@@ -350,6 +367,8 @@ def main():
         print(f"     detalle en: errores.csv")
     if not args.dry_run:
         print(f"  Copiadas         : {copied}")
+    if args.skip_existing:
+        print(f"  Ya existían en el destino (omitidas): {skipped_existing}")
     if args.google:
         print(f"  Google ya en catálogo (omitidas): {skipped_google}")
     print("\n  Distribución por categoría:")
