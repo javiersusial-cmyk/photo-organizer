@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Optional
 import numpy as np
 
+from core.quiet import quiet_stderr
+
 
 # ── Contextos que reconoce CLIP ───────────────────────────────────────────────
 CONTEXT_PROMPTS: dict[str, list[str]] = {
@@ -171,7 +173,8 @@ class TwoStepClassifier:
         import torch
         from PIL import Image
         try:
-            image  = Image.open(path).convert("RGB")
+            with quiet_stderr():
+                image = Image.open(path).convert("RGB")
             inputs = self._clip_proc(images=image, return_tensors="pt")
             with torch.no_grad():
                 out  = self._clip_model.get_image_features(**inputs)
@@ -208,9 +211,10 @@ class TwoStepClassifier:
         """Devuelve el ratio del área de la persona más grande respecto a la imagen (0-1)."""
         try:
             from PIL import Image as PILImage
-            img_w, img_h = PILImage.open(path).size
+            with quiet_stderr():
+                img_w, img_h = PILImage.open(path).size
+                results = self._yolo(str(path), verbose=False, classes=[0])
             img_area = img_w * img_h
-            results = self._yolo(str(path), verbose=False, classes=[0])
             max_ratio = 0.0
             for r in results:
                 for box in r.boxes:
@@ -268,8 +272,8 @@ class TwoStepClassifier:
         # 1. Lugar especial o urbano → siempre Ciudades, independiente de personas
         if context in ("lugar_especial", "urbano"):
             if city:
-                return "Ciudades", city
-            return "Ciudades", "Sin_ubicacion"
+                return "Ciudad", city
+            return "Ciudad", "Sin_ubicacion"
 
         # 2. Persona dominante
         if person_dominant:
@@ -284,7 +288,7 @@ class TwoStepClassifier:
         if context == "naturaleza":
             # Si reconoció un monumento pese a parecer naturaleza, prevalece la ciudad
             if city and city not in (gps_city, hint_city):
-                return "Ciudades", city
+                return "Ciudad", city
             return "Naturaleza", None
 
         # 4. Interior sin persona dominante → Hogar (habitaciones, objetos, mobiliario)
@@ -293,7 +297,7 @@ class TwoStepClassifier:
 
         # 5. Sin contexto claro pero con ciudad → Ciudades
         if city:
-            return "Ciudades", city
+            return "Ciudad", city
 
         # 6. Sin nada clasificable
         return self.fallback, None

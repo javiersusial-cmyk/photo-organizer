@@ -83,7 +83,7 @@ def build_dest_folder(dest_root: Path, year: str, tipo: str, nombre: str,
 def build_ai_folder(dest_root: Path, year: str, categoria: str,
                     ciudad: Optional[str]) -> Path:
     """Carpeta para fotos clasificadas por IA (Camino B)."""
-    if categoria == "Ciudades" and ciudad:
+    if categoria == "Ciudad" and ciudad:
         return dest_root / f"Año {year}" / "Ciudad" / sanitize(ciudad)
     return dest_root / f"Año {year}" / categoria
 

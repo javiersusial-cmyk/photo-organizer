@@ -27,8 +27,8 @@ def build_dest_path(
         folder = dest_root / duplicates_folder / year
     elif category == "Viajes" and city:
         folder = dest_root / year / "Viajes" / city
-    elif category == "Ciudades" and city:
-        folder = dest_root / year / "Ciudades" / city
+    elif category == "Ciudad" and city:
+        folder = dest_root / year / "Ciudad" / city
     elif "/" in category:
         # Sub-categoría ya incluye la barra, ej: "Eventos/Evento_01"
         parts = category.split("/", 1)

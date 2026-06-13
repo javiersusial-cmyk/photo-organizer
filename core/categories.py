@@ -16,7 +16,7 @@ CANONICAL_CATEGORIES: set[str] = {
     "Familia",
     "Eventos",
     "Viajes",
-    "Ciudades",
+    "Ciudad",
     "Naturaleza",
     "Animales",
     "Hogar",

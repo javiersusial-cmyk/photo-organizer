@@ -11,6 +11,8 @@ from typing import Optional
 import exifread
 from PIL import Image
 
+from core.quiet import quiet_stderr
+
 # Silenciar el ruido de exifread ("File format not recognized.") en consola.
 # El resultado se refleja igualmente en los flags de PhotoMetadata.
 logging.getLogger("exifread").setLevel(logging.CRITICAL)
@@ -88,10 +90,11 @@ def extract_metadata(path: Path) -> PhotoMetadata:
     except Exception:
         pass
 
-    # — Dimensiones con Pillow —
+    # — Dimensiones con Pillow (silenciando avisos C de libjpeg/libtiff) —
     try:
-        with Image.open(path) as img:
-            meta.width, meta.height = img.size
+        with quiet_stderr():
+            with Image.open(path) as img:
+                meta.width, meta.height = img.size
     except Exception as e:
         meta.readable = False
         meta.error = f"Pillow no pudo abrir la imagen: {type(e).__name__}"
