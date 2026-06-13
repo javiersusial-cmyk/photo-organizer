@@ -360,15 +360,17 @@ def main():
             # ── Ejecutar (si no es dry-run) ──
             if not args.dry_run:
                 origin = "google" if args.google else "principal"
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                # Evitar pisar una foto DISTINTA con el mismo nombre en la
+                # misma carpeta: si la ruta ya existe, usar un nombre único.
+                final_dest = unique_path(dest_path)
                 if catalog.add(
                     dup_key=dup_key, filename=src.name, filesize=filesize,
                     date_taken=dt_iso, year=year, width=meta.width, height=meta.height,
-                    source_path=str(src), dest_path=str(dest_path),
+                    source_path=str(src), dest_path=str(final_dest),
                     category=categoria, origin=origin,
                 ):
-                    dest_dir.mkdir(parents=True, exist_ok=True)
-                    if not dest_path.exists():
-                        shutil.copy2(src, dest_path)
+                    shutil.copy2(src, final_dest)
                     copied += 1
 
     # ── Guardar preview ───────────────────────────────────────────────────────
