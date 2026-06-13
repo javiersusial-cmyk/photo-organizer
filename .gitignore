@@ -16,3 +16,4 @@ yolov8n.pt
 tools/_geonames_cache/
 preview_dryrun.csv
 ultima_ejecucion.csv
+errores.csv

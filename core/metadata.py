@@ -1,6 +1,7 @@
 """Extrae metadatos EXIF de imágenes."""
 from __future__ import annotations
 
+import logging
 import struct
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -9,6 +10,10 @@ from typing import Optional
 
 import exifread
 from PIL import Image
+
+# Silenciar el ruido de exifread ("File format not recognized.") en consola.
+# El resultado se refleja igualmente en los flags de PhotoMetadata.
+logging.getLogger("exifread").setLevel(logging.CRITICAL)
 
 
 @dataclass
@@ -23,6 +28,9 @@ class PhotoMetadata:
     gps_lat: Optional[float] = None
     gps_lon: Optional[float] = None
     file_size_kb: int = 0
+    readable: bool = True          # False si Pillow no pudo abrir la imagen
+    has_exif: bool = False         # True si se leyó algún tag EXIF
+    error: Optional[str] = None    # descripción del problema, si lo hubo
 
 
 def _dms_to_decimal(dms_values, ref: str) -> Optional[float]:
@@ -47,6 +55,9 @@ def extract_metadata(path: Path) -> PhotoMetadata:
     try:
         with open(path, "rb") as f:
             tags = exifread.process_file(f, stop_tag="GPS GPSLongitude", details=False)
+
+        if tags:
+            meta.has_exif = True
 
         # Fecha
         for tag in ("EXIF DateTimeOriginal", "EXIF DateTimeDigitized", "Image DateTime"):
@@ -81,8 +92,9 @@ def extract_metadata(path: Path) -> PhotoMetadata:
     try:
         with Image.open(path) as img:
             meta.width, meta.height = img.size
-    except Exception:
-        pass
+    except Exception as e:
+        meta.readable = False
+        meta.error = f"Pillow no pudo abrir la imagen: {type(e).__name__}"
 
     # — Fallback de fecha: fecha de modificación del archivo —
     if meta.date_taken is None:

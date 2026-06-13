@@ -36,11 +36,10 @@ from core.metadata import extract_metadata
 from core.folder_context import analyze_folder
 from core.catalog import Catalog
 
+RAW_EXTS = {".cr2", ".cr3", ".nef", ".arw", ".dng", ".pef", ".raf",
+            ".orf", ".rw2", ".srw", ".raw", ".x3f"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tiff", ".tif",
-              ".bmp", ".gif", ".webp",
-              # RAW de distintas marcas
-              ".cr2", ".cr3", ".nef", ".arw", ".dng", ".pef", ".raf",
-              ".orf", ".rw2", ".srw", ".raw", ".x3f"}
+              ".bmp", ".gif", ".webp"} | RAW_EXTS
 
 
 def sanitize(name: str) -> str:
@@ -184,8 +183,10 @@ def main():
         return classifier
 
     preview_rows: list[tuple] = []
+    error_rows: list[tuple] = []
     stats = Counter()
     copied = skipped_google = dup_to_review = 0
+    no_legibles = sin_exif = 0
     seen_keys: set[str] = set()   # claves ya colocadas en esta ejecución
 
     for folder, photos in tqdm(groups.items(), unit="carpeta"):
@@ -204,6 +205,29 @@ def main():
                 filesize = 0
             dt_iso = meta.date_taken.isoformat() if meta.date_taken else None
             dup_key = Catalog.make_dup_key(src.name, filesize, dt_iso, meta.width, meta.height)
+
+            # ── Registro de incidencias de lectura ──
+            ext = src.suffix.lower()
+            if not meta.readable:
+                if ext in RAW_EXTS:
+                    # RAW que Pillow no decodifica: normal, se coloca por fecha
+                    sin_exif += 1
+                    error_rows.append((str(src), ext, "RAW sin miniatura (ok)",
+                                       "sí" if meta.has_exif else "no",
+                                       "sí" if meta.date_taken else "no",
+                                       "RAW no decodificable por Pillow; se coloca por fecha"))
+                else:
+                    # No-RAW que no abre → probablemente corrupto: ATENCIÓN
+                    no_legibles += 1
+                    error_rows.append((str(src), ext, "ATENCION corrupto?",
+                                       "sí" if meta.has_exif else "no",
+                                       "sí" if meta.date_taken else "no",
+                                       meta.error or "Pillow no pudo abrir un formato común"))
+            elif not meta.has_exif:
+                sin_exif += 1
+                error_rows.append((str(src), ext, "sin EXIF (ok)",
+                                   "no", "sí" if meta.date_taken else "no",
+                                   "Formato sin EXIF legible; se usa fecha de archivo"))
 
             # ── Fase Google: si el nombre ya existe en catálogo, descartar ──
             if args.google:
@@ -303,12 +327,27 @@ def main():
         else:
             print(f"\n  AVISO: no se pudo escribir el preview CSV (sin permisos).")
 
+    # ── Guardar errores ───────────────────────────────────────────────────────
+    if error_rows:
+        err_csv = dest_root / "errores.csv"
+        try:
+            with open(err_csv, "w", newline="", encoding="utf-8-sig") as f:
+                w = csv.writer(f)
+                w.writerow(["archivo", "extension", "severidad", "exif_leido",
+                            "tiene_fecha", "detalle"])
+                w.writerows(error_rows)
+        except PermissionError:
+            err_csv = None
+
     # ── Resumen ───────────────────────────────────────────────────────────────
     print("\n" + "=" * 60)
     print("DRY-RUN (nada copiado)" if args.dry_run else "EJECUCIÓN COMPLETADA")
     print("=" * 60)
     print(f"  Fotos a procesar : {len(preview_rows)}")
     print(f"  Duplicadas -> carpeta Duplicadas/ : {dup_to_review}")
+    print(f"  Incidencias: {no_legibles} NO legibles, {sin_exif} sin EXIF (ok)")
+    if error_rows:
+        print(f"     detalle en: errores.csv")
     if not args.dry_run:
         print(f"  Copiadas         : {copied}")
     if args.google:
