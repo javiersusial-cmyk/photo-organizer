@@ -8,3 +8,11 @@ build/
 .venv/
 venv/
 checkpoint.json
+catalogo.db
+*.db-wal
+*.db-shm
+yolov8n.pt
+*.pt
+tools/_geonames_cache/
+preview_dryrun.csv
+ultima_ejecucion.csv
