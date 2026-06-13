@@ -50,6 +50,18 @@ def sanitize(name: str) -> str:
     return " ".join(name.split()).strip(" .")
 
 
+def unique_path(dest: Path) -> Path:
+    """Devuelve una ruta libre añadiendo sufijo _N si ya existe."""
+    if not dest.exists():
+        return dest
+    stem, suffix, n = dest.stem, dest.suffix, 1
+    while True:
+        cand = dest.parent / f"{stem}_{n}{suffix}"
+        if not cand.exists():
+            return cand
+        n += 1
+
+
 def group_by_leaf(source_root: Path) -> dict[Path, list[Path]]:
     """Agrupa las imágenes por la carpeta que las contiene."""
     groups: dict[Path, list[Path]] = defaultdict(list)
@@ -173,7 +185,8 @@ def main():
 
     preview_rows: list[tuple] = []
     stats = Counter()
-    copied = skipped_dup = skipped_google = 0
+    copied = skipped_google = dup_to_review = 0
+    seen_keys: set[str] = set()   # claves ya colocadas en esta ejecución
 
     for folder, photos in tqdm(groups.items(), unit="carpeta"):
         ctx = analyze_folder(folder, source_root)
@@ -198,10 +211,22 @@ def main():
                     skipped_google += 1
                     continue
 
-            # ── Dedup exacto ──
-            if not args.google and catalog.exists(dup_key):
-                skipped_dup += 1
+            # ── Dedup exacto → llevar la copia a Duplicadas/ para revisión ──
+            if not args.google and (dup_key in seen_keys or catalog.exists(dup_key)):
+                year = meta.year
+                dup_dir  = dest_root / "Duplicadas" / f"Año {year}"
+                dup_dest = dup_dir / src.name
+                preview_rows.append((str(src), str(dup_dest), year, "Duplicada", "Duplicada"))
+                stats["Duplicada"] += 1
+                dup_to_review += 1
+                if not args.dry_run and not catalog.duplicate_seen(str(src)):
+                    dup_dir.mkdir(parents=True, exist_ok=True)
+                    final = unique_path(dup_dest)
+                    shutil.copy2(src, final)
+                    catalog.add_duplicate(str(src), dup_key, str(final))
                 continue
+
+            seen_keys.add(dup_key)
 
             # ── Decidir destino ──
             if ctx.meaningful:
@@ -251,8 +276,6 @@ def main():
                     if not dest_path.exists():
                         shutil.copy2(src, dest_path)
                     copied += 1
-                else:
-                    skipped_dup += 1
 
     # ── Guardar preview ───────────────────────────────────────────────────────
     base_name = "preview_dryrun" if args.dry_run else "ultima_ejecucion"
@@ -285,15 +308,16 @@ def main():
     print("DRY-RUN (nada copiado)" if args.dry_run else "EJECUCIÓN COMPLETADA")
     print("=" * 60)
     print(f"  Fotos a procesar : {len(preview_rows)}")
+    print(f"  Duplicadas -> carpeta Duplicadas/ : {dup_to_review}")
     if not args.dry_run:
         print(f"  Copiadas         : {copied}")
-        print(f"  Duplicadas (omitidas): {skipped_dup}")
     if args.google:
         print(f"  Google ya en catálogo (omitidas): {skipped_google}")
     print("\n  Distribución por categoría:")
     for cat, n in stats.most_common(30):
         print(f"    {cat:<35} {n:>6}")
-    print(f"\n  Catálogo: {catalog.count()} fotos | Preview: {preview_csv}")
+    print(f"\n  Catálogo: {catalog.count()} fotos | "
+          f"Duplicadas registradas: {catalog.count_duplicates()} | Preview: {preview_csv}")
     print("=" * 60)
 
     catalog.close()

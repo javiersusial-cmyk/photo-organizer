@@ -46,6 +46,16 @@ class Catalog:
         """)
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_dupkey ON photos(dup_key)")
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_filename ON photos(filename)")
+        # Tabla de duplicadas: fotos descartadas por ser copia de otra ya colocada
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS duplicates (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_path TEXT UNIQUE NOT NULL,
+                dup_key     TEXT NOT NULL,
+                dup_dest    TEXT,
+                added_at    TEXT NOT NULL
+            )
+        """)
         self._conn.commit()
 
     @staticmethod
@@ -88,8 +98,30 @@ class Catalog:
         except sqlite3.IntegrityError:
             return False  # clave ya existente
 
+    def duplicate_seen(self, source_path: str) -> bool:
+        """True si esta foto concreta (por ruta origen) ya se trató como duplicada."""
+        cur = self._conn.execute(
+            "SELECT 1 FROM duplicates WHERE source_path = ? LIMIT 1", (source_path,)
+        )
+        return cur.fetchone() is not None
+
+    def add_duplicate(self, source_path: str, dup_key: str, dup_dest: str) -> bool:
+        try:
+            self._conn.execute("""
+                INSERT INTO duplicates (source_path, dup_key, dup_dest, added_at)
+                VALUES (?,?,?,?)
+            """, (source_path, dup_key, dup_dest,
+                  datetime.now().isoformat(timespec="seconds")))
+            self._conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
     def count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM photos").fetchone()[0]
+
+    def count_duplicates(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM duplicates").fetchone()[0]
 
     def stats_by_category(self) -> list[tuple[str, int]]:
         cur = self._conn.execute(
