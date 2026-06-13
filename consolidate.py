@@ -77,6 +77,51 @@ def build_ai_folder(dest_root: Path, year: str, categoria: str,
     return dest_root / f"Año {year}" / categoria
 
 
+def build_session_map(photos: list[Path], gap_hours: float = 12.0) -> dict[Path, str]:
+    """
+    Para una carpeta SIN contexto, agrupa las fotos por proximidad temporal
+    en sesiones. Devuelve {foto: etiqueta_sesion} donde la etiqueta es la
+    fecha (o rango de fechas) de la sesión.
+    """
+    from datetime import timedelta
+    dated   = []
+    undated = []
+    for p in photos:
+        meta = extract_metadata(p)
+        if meta.date_taken:
+            dated.append((p, meta.date_taken))
+        else:
+            undated.append(p)
+
+    dated.sort(key=lambda x: x[1])
+    result: dict[Path, str] = {}
+    gap = timedelta(hours=gap_hours)
+
+    session: list = []
+    sessions: list[list] = []
+    last = None
+    for p, dt in dated:
+        if last is not None and (dt - last) > gap:
+            sessions.append(session)
+            session = []
+        session.append((p, dt))
+        last = dt
+    if session:
+        sessions.append(session)
+
+    for grp in sessions:
+        d0 = grp[0][1].date()
+        d1 = grp[-1][1].date()
+        label = f"{d0:%Y-%m-%d}" if d0 == d1 else f"{d0:%Y-%m-%d} a {d1:%Y-%m-%d}"
+        for p, _dt in grp:
+            result[p] = label
+
+    for p in undated:
+        result[p] = "sin fecha"
+
+    return result
+
+
 def main():
     ap = argparse.ArgumentParser(description="Consolidador de fotos v2")
     ap.add_argument("--source", required=True)
@@ -86,7 +131,9 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="Solo previsualizar el mapeo, sin copiar ni registrar")
     ap.add_argument("--ai", action="store_true",
-                    help="Usar IA para carpetas sin contexto (volcados)")
+                    help="Usar IA para carpetas sin contexto (en vez de agrupar por fecha)")
+    ap.add_argument("--session-gap", type=float, default=12.0,
+                    help="Horas de separación para una nueva sesión en 'Sin clasificar' (default: 12)")
     ap.add_argument("--landmark-threshold", type=float, default=0.30,
                     help="Umbral de monumentos (más alto = menos falsos positivos)")
     ap.add_argument("--google", action="store_true",
@@ -126,6 +173,11 @@ def main():
     for folder, photos in tqdm(groups.items(), unit="carpeta"):
         ctx = analyze_folder(folder, source_root)
 
+        # Para carpetas sin contexto y sin IA: precalcular sesiones por fecha
+        session_map: dict[Path, str] = {}
+        if not ctx.meaningful and not args.ai:
+            session_map = build_session_map(photos, gap_hours=args.session_gap)
+
         for src in photos:
             meta = extract_metadata(src)
             try:
@@ -156,21 +208,22 @@ def main():
                 categoria = f"{ctx.tipo} - {ctx.nombre}"
                 ciudad = None
             else:
-                # Camino B: IA
+                year   = meta.year
+                target = google_root if args.google else dest_root
                 if args.ai:
+                    # Camino B con IA visual
                     cat, ciudad = get_classifier().classify(
                         src, gps_city=None, hint_city=None
                     )
-                    # Colapsar Familia→Personas y simplificar
-                    if cat in ("Familia",):
+                    if cat == "Familia":
                         cat = "Personas"
+                    dest_dir  = build_ai_folder(target, year, cat, ciudad)
+                    categoria = cat
                 else:
-                    cat, ciudad = "Sin_clasificar", None
-                year = meta.year
-                dest_dir = build_ai_folder(
-                    google_root if args.google else dest_root, year, cat, ciudad
-                )
-                categoria = cat
+                    # Camino B por sesión temporal → Sin clasificar / <fecha>
+                    sesion    = session_map.get(src, "sin fecha")
+                    dest_dir  = target / f"Año {year}" / "Sin clasificar" / sanitize(sesion)
+                    categoria = "Sin_clasificar"
 
             dest_path = dest_dir / src.name
             stats[categoria.split(" - ")[0] if " - " in categoria else categoria] += 1
