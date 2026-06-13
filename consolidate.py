@@ -191,7 +191,10 @@ def main():
         nonlocal classifier
         if classifier is None:
             from core.detector import TwoStepClassifier
-            classifier = TwoStepClassifier(detect_landmarks=True)
+            classifier = TwoStepClassifier(
+                detect_landmarks=True,
+                landmark_threshold=args.landmark_threshold,
+            )
         return classifier
 
     preview_rows: list[tuple] = []
@@ -204,9 +207,9 @@ def main():
     for folder, photos in tqdm(groups.items(), unit="carpeta"):
         ctx = analyze_folder(folder, source_root)
 
-        # Para carpetas sin contexto y sin IA: precalcular sesiones por fecha
+        # Para carpetas sin contexto: precalcular sesiones por fecha siempre
         session_map: dict[Path, str] = {}
-        if not ctx.meaningful and not args.ai:
+        if not ctx.meaningful:
             session_map = build_session_map(photos, gap_hours=args.session_gap)
 
         for src in photos:
@@ -281,19 +284,29 @@ def main():
             else:
                 year   = meta.year
                 target = google_root if args.google else dest_root
-                if args.ai:
-                    # Camino B con IA visual
+                sesion = session_map.get(src, "resto")
+
+                if sesion != "resto":
+                    # Sesión fiable por fecha (5+ fotos) → se respeta, sin IA
+                    dest_dir  = target / f"Año {year}" / "Sin clasificar" / sanitize(sesion)
+                    categoria = "Sin_clasificar"
+                elif args.ai:
+                    # ÚLTIMA capa: IA solo sobre el 'resto' (sobras sin sesión)
                     cat, ciudad = get_classifier().classify(
                         src, gps_city=None, hint_city=None
                     )
                     if cat == "Familia":
                         cat = "Personas"
-                    dest_dir  = build_ai_folder(target, year, cat, ciudad)
-                    categoria = cat
+                    if cat == "Sin_clasificar":
+                        # La IA tampoco lo tiene claro → queda en resto
+                        dest_dir  = target / f"Año {year}" / "Sin clasificar" / "resto"
+                        categoria = "Sin_clasificar"
+                    else:
+                        dest_dir  = build_ai_folder(target, year, cat, ciudad)
+                        categoria = cat
                 else:
-                    # Camino B por sesión temporal → Sin clasificar / <fecha>
-                    sesion    = session_map.get(src, "sin fecha")
-                    dest_dir  = target / f"Año {year}" / "Sin clasificar" / sanitize(sesion)
+                    # Sin IA → el resto se queda agrupado
+                    dest_dir  = target / f"Año {year}" / "Sin clasificar" / "resto"
                     categoria = "Sin_clasificar"
 
             dest_path = dest_dir / src.name

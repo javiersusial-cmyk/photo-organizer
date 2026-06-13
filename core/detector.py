@@ -90,9 +90,11 @@ class TwoStepClassifier:
     Clasificador en dos pasos: YOLO (personas) + CLIP (contexto).
     """
 
-    def __init__(self, fallback: str = "Sin_clasificar", detect_landmarks: bool = False):
-        self.fallback          = fallback
-        self.detect_landmarks  = detect_landmarks
+    def __init__(self, fallback: str = "Sin_clasificar", detect_landmarks: bool = False,
+                 landmark_threshold: Optional[float] = None):
+        self.fallback           = fallback
+        self.detect_landmarks   = detect_landmarks
+        self.landmark_threshold = landmark_threshold
         self._yolo             = None
         self._clip_model       = None
         self._clip_proc        = None
@@ -184,10 +186,11 @@ class TwoStepClassifier:
         if feat is None or self._landmark_features is None:
             return None
         from core.landmarks import LANDMARK_THRESHOLD
+        thr = self.landmark_threshold if self.landmark_threshold is not None else LANDMARK_THRESHOLD
         sims       = (feat @ self._landmark_features.T).squeeze(0)
         best_idx   = int(sims.argmax())
         best_score = float(sims[best_idx])
-        if best_score < LANDMARK_THRESHOLD:
+        if best_score < thr:
             return None
         return self._landmark_cities[best_idx]
 
