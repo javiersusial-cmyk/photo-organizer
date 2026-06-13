@@ -156,18 +156,6 @@ class TwoStepClassifier:
                 self._landmark_cities.append(city)
             self._landmark_features = self._embed_text(lm_prompts)
 
-    def _has_person(self, path: Path) -> bool:
-        """Devuelve True si YOLO detecta al menos una persona con suficiente confianza."""
-        try:
-            results = self._yolo(str(path), verbose=False, classes=[0])  # clase 0 = persona
-            for r in results:
-                for box in r.boxes:
-                    if float(box.conf[0]) >= PERSON_CONFIDENCE:
-                        return True
-        except Exception:
-            pass
-        return False
-
     def _image_feature(self, path: Path):
         """Calcula el embedding normalizado de la imagen una sola vez (o None)."""
         import torch
