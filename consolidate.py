@@ -138,6 +138,36 @@ def build_session_map(photos: list[Path], gap_hours: float = 12.0) -> dict[Path,
     return result
 
 
+def detect_session_cities(session_map: dict[Path, str], classifier,
+                          min_fraction: float = 0.4, sample: int = 12) -> dict[str, str]:
+    """
+    Para cada sesión de fecha (no 'resto'), evalúa monumentos en una muestra
+    de sus fotos. Si una mayoría (>= min_fraction) coincide en la MISMA ciudad,
+    devuelve {etiqueta_sesion: ciudad}. Solo así se nombra la sesión por lugar.
+    """
+    from collections import defaultdict, Counter
+    sessions: dict[str, list[Path]] = defaultdict(list)
+    for p, label in session_map.items():
+        if label != "resto":
+            sessions[label].append(p)
+
+    result: dict[str, str] = {}
+    for label, plist in sessions.items():
+        muestra = plist[:sample]
+        votos: Counter = Counter()
+        evaluadas = 0
+        for p in muestra:
+            evaluadas += 1
+            city = classifier.landmark_city(p)
+            if city:
+                votos[city] += 1
+        if votos:
+            city, n = votos.most_common(1)[0]
+            if evaluadas and (n / evaluadas) >= min_fraction:
+                result[label] = city
+    return result
+
+
 def main():
     ap = argparse.ArgumentParser(description="Consolidador de fotos v2")
     ap.add_argument("--source", required=True)
@@ -209,8 +239,12 @@ def main():
 
         # Para carpetas sin contexto: precalcular sesiones por fecha siempre
         session_map: dict[Path, str] = {}
+        session_city: dict[str, str] = {}
         if not ctx.meaningful:
             session_map = build_session_map(photos, gap_hours=args.session_gap)
+            # Con IA: intentar nombrar sesiones por monumento (consenso de la sesión)
+            if args.ai:
+                session_city = detect_session_cities(session_map, get_classifier())
 
         for src in photos:
             meta = extract_metadata(src)
@@ -287,9 +321,15 @@ def main():
                 sesion = session_map.get(src, "resto")
 
                 if sesion != "resto":
-                    # Sesión fiable por fecha (5+ fotos) → se respeta, sin IA
-                    dest_dir  = target / f"Año {year}" / "Sin clasificar" / sanitize(sesion)
-                    categoria = "Sin_clasificar"
+                    if sesion in session_city:
+                        # Sesión reconocida por monumento (consenso) → Ciudad/<lugar> (fecha)
+                        ciudad    = session_city[sesion]
+                        dest_dir  = target / f"Año {year}" / "Ciudad" / sanitize(f"{ciudad} ({sesion})")
+                        categoria = "Ciudad"
+                    else:
+                        # Sesión fiable por fecha (5+ fotos) → se respeta
+                        dest_dir  = target / f"Año {year}" / "Sin clasificar" / sanitize(sesion)
+                        categoria = "Sin_clasificar"
                 elif args.ai:
                     # ÚLTIMA capa: IA solo sobre el 'resto' (sobras sin sesión)
                     cat, ciudad = get_classifier().classify(

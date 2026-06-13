@@ -207,6 +207,13 @@ class TwoStepClassifier:
             return None
         return self._landmark_cities[best_idx]
 
+    def landmark_city(self, path: Path) -> Optional[str]:
+        """Devuelve la ciudad de un monumento reconocido en la foto, o None."""
+        if self._clip_model is None:
+            self._load_clip()
+        feat = self._image_feature(path)
+        return self._landmark_from_feature(feat)
+
     def _person_area_ratio(self, path: Path) -> float:
         """Devuelve el ratio del área de la persona más grande respecto a la imagen (0-1)."""
         try:
