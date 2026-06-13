@@ -2,7 +2,24 @@
 
 Herramienta en Python para clasificar, desduplicar y organizar colecciones grandes de fotos (miles o decenas de miles de imágenes).
 
-## ¿Qué hace?
+> ## ⭐ Motor principal: `consolidate.py`
+>
+> El flujo recomendado es el **consolidador v2**, que conserva los nombres de
+> carpeta que ya tienen sentido (viajes, ciudades, eventos), asigna el año,
+> agrupa lo suelto por sesiones de fecha y deduplica con un catálogo SQLite único.
+>
+> **Documentación y flujo paso a paso → [wiki/consolidador.md](wiki/consolidador.md)**
+>
+> Resumen del flujo:
+> 1. Preview principal (`--dry-run`) → revisar CSV
+> 2. Ejecución real de la principal → llena el catálogo
+> 3. Preview de Google (`--google --skip-existing --dry-run`)
+> 4. Ejecución real de Google
+>
+> El `run.py` original (clasificación CLIP/YOLO completa) sigue disponible pero
+> es un enfoque anterior; ver secciones de abajo.
+
+## ¿Qué hace? (run.py — enfoque original)
 
 1. **Escanea** carpetas y subcarpetas buscando imágenes
 2. **Extrae metadatos EXIF** (fecha, cámara, coordenadas GPS)
