@@ -109,7 +109,12 @@ def build_session_map(photos: list[Path], gap_hours: float = 12.0) -> dict[Path,
     if session:
         sessions.append(session)
 
+    MIN_SESSION = 5   # sesiones con menos fotos van a 'resto'
     for grp in sessions:
+        if len(grp) < MIN_SESSION:
+            for p, _dt in grp:
+                result[p] = "resto"
+            continue
         d0 = grp[0][1].date()
         d1 = grp[-1][1].date()
         label = f"{d0:%Y-%m-%d}" if d0 == d1 else f"{d0:%Y-%m-%d} a {d1:%Y-%m-%d}"
@@ -117,7 +122,7 @@ def build_session_map(photos: list[Path], gap_hours: float = 12.0) -> dict[Path,
             result[p] = label
 
     for p in undated:
-        result[p] = "sin fecha"
+        result[p] = "resto"
 
     return result
 
