@@ -16,6 +16,11 @@ Combinando ambas señales se obtiene la categoría final:
 """
 from __future__ import annotations
 
+import os
+# Silenciar avisos de OpenCV (p.ej. "Incorrect count for DNGPrivateData")
+# antes de que ultralytics/YOLO importe cv2. Son inofensivos.
+os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
+
 from pathlib import Path
 from typing import Optional
 import numpy as np
@@ -104,6 +109,11 @@ class TwoStepClassifier:
         self._landmark_cities: list[str] = []
 
     def _load_yolo(self):
+        try:
+            import cv2
+            cv2.setLogLevel(0)  # silenciar warnings de OpenCV
+        except Exception:
+            pass
         from ultralytics import YOLO
         print("  Cargando YOLOv8 nano (detector de personas ~6 MB)...")
         self._yolo = YOLO("yolov8n.pt")
